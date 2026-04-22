@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/theme/admin_theme.dart';
+import 'data/auth_repository.dart';
+import 'data/supabase_config.dart';
+import 'features/auth/login_page.dart';
 import 'features/bookings/bookings_page.dart';
 import 'features/dashboard/dashboard_page.dart';
 import 'features/notices/notices_page.dart';
@@ -11,7 +15,12 @@ import 'features/support/support_page.dart';
 import 'features/users/users_page.dart';
 import 'shared/widgets/admin_shell.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: SupabaseConfig.url,
+    anonKey: SupabaseConfig.anonKey,
+  );
   runApp(const AdminApp());
 }
 
@@ -36,11 +45,55 @@ final _router = GoRouter(
   ],
 );
 
-class AdminApp extends StatelessWidget {
+class AdminApp extends StatefulWidget {
   const AdminApp({super.key});
 
   @override
+  State<AdminApp> createState() => _AdminAppState();
+}
+
+class _AdminAppState extends State<AdminApp> {
+  final _repo = AdminAuthRepository();
+  bool _loading = true;
+  bool _authed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (event.event == AuthChangeEvent.signedOut) {
+        setState(() => _authed = false);
+      }
+    });
+  }
+
+  Future<void> _check() async {
+    final ok = await _repo.isCurrentAdmin();
+    if (!mounted) return;
+    setState(() {
+      _authed = ok;
+      _loading = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return MaterialApp(
+        theme: AdminTheme.light,
+        debugShowCheckedModeBanner: false,
+        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+    if (!_authed) {
+      return MaterialApp(
+        title: '팝업플레이스 관리자',
+        theme: AdminTheme.light,
+        debugShowCheckedModeBanner: false,
+        home: LoginPage(onLoggedIn: () => setState(() => _authed = true)),
+      );
+    }
     return MaterialApp.router(
       title: '팝업플레이스 관리자',
       theme: AdminTheme.light,
